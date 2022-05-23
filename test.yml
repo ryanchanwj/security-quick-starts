@@ -1,0 +1,90 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AWS Basis Security Quick Starts - Single Account Deployment.
+
+Parameters:
+  BudgetAmountLimit:
+    Type: Number
+    Description: Enter budget amount limit for billing alarms.
+  BudgetCurrencyUnit:
+    Type: String
+    AllowedValues:
+      - AUD
+      - BRL
+      - CAD
+      - CHF
+      - CNY
+      - DKK
+      - EUR
+      - GBP
+      - HKD
+      - JPY
+      - KRW
+      - NOK
+      - NZD
+      - SEK
+      - SGD
+      - USD
+      - ZAR
+    Default: USD
+    Description: Enter currency unit to use for budgets.
+  BudgetTimeUnit:
+    Type: String
+    AllowedValues:
+      - ANNUALLY
+      - QUARTERLY
+      - MONTHLY
+      - DAILY
+    Description: Enter the length of time until a budget resets the actual and forecasted spend.
+  BudgetsSubscriptionEmail:
+    Type: String
+    Description: Enter the email to subscribe to budgets notification. By default, alerts are sent when 80% and 99% budget thresholds are reached.
+
+Resources:
+    ## Enables GuardDuty
+    GuardDutyDetector:
+      Type: AWS::GuardDuty::Detector
+      Properties: 
+        Enable: true
+        # An enum value that specifies how frequently updated findings are exported.
+        FindingPublishingFrequency: "FIFTEEN_MINUTES"
+    ## Setup billing alarms 
+    BudgetNotification:
+      Type: AWS::Budgets::Budget
+      Properties: 
+        Budget: 
+          # User input budget amount, currency unit and time unit 
+          BudgetLimit:
+            Amount: 
+              Ref: BudgetAmountLimit
+            Unit:
+              Ref: BudgetCurrencyUnit
+          TimeUnit:
+            Ref: BudgetTimeUnit 
+          BudgetType: COST
+        # User input subscription email for alerts
+        NotificationsWithSubscribers: 
+          - Notification:
+              NotificationType: ACTUAL
+              ComparisonOperator: GREATER_THAN
+              Threshold: 99
+            Subscribers:
+              - SubscriptionType: EMAIL
+                Address:
+                  Ref: BudgetsSubscriptionEmail
+          - Notification:
+              NotificationType: ACTUAL
+              ComparisonOperator: GREATER_THAN
+              Threshold: 80
+            Subscribers:
+            - SubscriptionType: EMAIL
+              Address: 
+                Ref: BudgetsSubscriptionEmail
+    ## Implements Security Hub service, resource is created in region where CF stack is deployed
+    SecurityHub:
+      Type: AWS::SecurityHub::Hub
+    ## Access and role analysis with IAM access analyzer
+    Analyzer:
+      Type: 'AWS::AccessAnalyzer::Analyzer'
+      Properties:
+        Type: ACCOUNT
+ 
