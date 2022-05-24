@@ -1,7 +1,32 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: AWS Basis Security Quick Starts - Single Account Deployment.
+Description: AWS Basis Security Quick Starts - Single Account Deployment. Users have the ability to decide which resources to deploy. 
+
+Conditions:
+  AnalyzerEnabled:
+    !Equals
+    - !Ref EnableAnalyzer
+    - 'true'
+  GuardDutyEnabled:
+    !Equals
+    - !Ref EnableGuardDuty
+    - 'true'
+  SecurityHubEnabled:
+    !Equals
+    - !Ref EnableSecurityHub
+    - 'true'
 
 Parameters:
+  AnalyzerName: 
+    Default: ""
+    Description: "The name of the IAM access analyzer."
+    Type: String
+  AnalyzerType:
+    Default: "ACCOUNT"
+    AllowedValues:
+      - ACCOUNT
+      - ORGANIZATION
+    Description: "The type represents the zone of trust for the analyzer."
+    Type: String
   BudgetAmountLimit:
     Type: Number
     Description: Enter budget amount limit for billing alarms.
@@ -38,15 +63,47 @@ Parameters:
   BudgetsSubscriptionEmail:
     Type: String
     Description: Enter the email to subscribe to budgets notification. By default, alerts are sent when 80% and 99% budget thresholds are reached.
-
+  EnableAnalyzer: 
+    AllowedValues: 
+      - "true"
+      - "false"
+    Default: "true"
+    Description: "Enables IAM access analyzer."
+    Type: String
+  EnableGuardDuty: 
+    AllowedValues: 
+      - "true"
+      - "false"
+    Default: "true"
+    Description: "Enables GuardDuty regional service."
+    Type: String
+  EnableSecurityHub: 
+    AllowedValues: 
+      - "true"
+      - "false"
+    Default: "true"
+    Description: "Enables SecurityHub regional service."
+    Type: String
+  GuardDutyPublishingFrequency:
+    AllowedValues: 
+      - "FIFTEEN_MINUTES"
+      - "ONE_HOUR"
+      - "SIX_HOURS"
+    Default: "FIFTEEN_MINUTES"
+    Description: "Specifies how frequently updated findings are exported."
+    Type: String
 Resources:
     ## Enables GuardDuty
     GuardDutyDetector:
+      Condition: GuardDutyEnabled
       Type: AWS::GuardDuty::Detector
       Properties: 
         Enable: true
         # An enum value that specifies how frequently updated findings are exported.
-        FindingPublishingFrequency: "FIFTEEN_MINUTES"
+        FindingPublishingFrequency: !Ref GuardDutyPublishingFrequency
+        Tags:
+          - Key: Name
+            Value: !Ref AWS::StackName
     ## Setup billing alarms 
     BudgetNotification:
       Type: AWS::Budgets::Budget
@@ -61,6 +118,9 @@ Resources:
           TimeUnit:
             Ref: BudgetTimeUnit 
           BudgetType: COST
+        Tags:
+          - Key: Name
+            Value: !Ref AWS::StackName
         # User input subscription email for alerts
         NotificationsWithSubscribers: 
           - Notification:
@@ -81,10 +141,33 @@ Resources:
                 Ref: BudgetsSubscriptionEmail
     ## Implements Security Hub service, resource is created in region where CF stack is deployed
     SecurityHub:
+      Condition: SecurityHubEnabled
       Type: AWS::SecurityHub::Hub
+      Properties:
+        Tags:
+          - Key: Name
+            Value: !Ref AWS::StackName
     ## Access and role analysis with IAM access analyzer
     Analyzer:
+      Condition: AnalyzerEnabled
       Type: 'AWS::AccessAnalyzer::Analyzer'
       Properties:
-        Type: ACCOUNT
- 
+        AnalyzerName: !Ref AnalyzerName
+        Type: !Ref AnalyzerType
+        Tags:
+          - Key: Name
+            Value: !Ref AWS::StackName
+
+Outputs:
+  GuardDutyDetectorID: 
+    Condition: GuardDutyEnabled
+    Description: "The unique ID of the GuardDuty detector resource."
+    Value: !Ref GuardDutyDetector
+  SecurityHubArn:
+    Condition: SecurityHubEnabled
+    Description: "HubARN of security hub resource created."
+    Value: !Ref SecurityHub
+  AnalyzerARN:
+    Condition: AnalyzerEnabled
+    Description: "ARN of the analyzer created."
+    Value: !Ref Analyzer
