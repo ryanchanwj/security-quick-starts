@@ -1,6 +1,26 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: AWS Basis Security Quick Starts - Single Account Deployment. Users have the ability to decide which resources to deploy. 
 
+# Order the parameters in a way that makes more sense (not alphabetized)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Parameters:
+          - EnableAnalyzer
+          - AnalyzerName
+          - AnalyzerType
+          - EnableGuardDuty
+          - GuardDutyPublishingFrequency
+          - EnableBudgetAlerts
+          - BudgetsSubscriptionEmail
+          - BudgetName
+          - BudgetCurrencyUnit
+          - BudgetAmountLimit
+          - BudgetFirstThreshold
+          - BudgetSecondThreshold
+          - BudgetTimeUnit
+          - EnableSecurityHub
+
 Conditions:
   AnalyzerEnabled:
     !Equals
@@ -14,75 +34,113 @@ Conditions:
     !Equals
     - !Ref EnableSecurityHub
     - 'true'
+  BudgetAlertsEnabled:
+    !Equals
+    - !Ref EnableBudgetAlerts
+    - 'true'
+  HasSubscriptionEmail: !Not 
+    - !Equals 
+      - !Ref BudgetsSubscriptionEmail
+      - ''
+  HasBudgetAmount: !Not 
+    - !Equals 
+      - !Ref BudgetAmountLimit
+      - 0
+  CreateBudgetAlerts: !And 
+    - !Condition BudgetAlertsEnabled
+    - !Condition HasSubscriptionEmail
+    - !Condition HasBudgetAmount
 
 Parameters:
   AnalyzerName: 
-    Default: ""
+    Default: "QuickStartAnalyser"
     Description: "The name of the IAM access analyzer."
     Type: String
   AnalyzerType:
     Default: "ACCOUNT"
     AllowedValues:
-      - ACCOUNT
-      - ORGANIZATION
+      - "ACCOUNT"
+      - "ORGANIZATION"
     Description: "The type represents the zone of trust for the analyzer."
     Type: String
   BudgetAmountLimit:
     Type: Number
     Description: Enter budget amount limit for billing alarms.
+    Default: 0
   BudgetCurrencyUnit:
     Type: String
     AllowedValues:
-      - AUD
-      - BRL
-      - CAD
-      - CHF
-      - CNY
-      - DKK
-      - EUR
-      - GBP
-      - HKD
-      - JPY
-      - KRW
-      - NOK
-      - NZD
-      - SEK
-      - SGD
-      - USD
-      - ZAR
-    Default: USD
+      - "AUD"
+      - "BRL"
+      - "CAD"
+      - "CHF"
+      - "CNY"
+      - "DKK"
+      - "EUR"
+      - "GBP"
+      - "HKD"
+      - "JPY"
+      - "KRW"
+      - "NOK"
+      - "NZD"
+      - "SEK"
+      - "SGD"
+      - "USD"
+      - "ZAR"
+    Default: "USD"
     Description: Enter currency unit to use for budgets.
+  BudgetName:
+    Type: String
+    Description: Name of the budget. 
+    Default: "QuickStartBudgetNotification"
+  BudgetFirstThreshold:
+    Description: The first percentage threshold at which you'll receive a notification.
+    Type: Number
+    Default: 75
+  BudgetSecondThreshold:
+    Description: The second percentage threshold at which you'll receive a notification.
+    Type: Number
+    Default: 99
   BudgetTimeUnit:
     Type: String
     AllowedValues:
-      - ANNUALLY
-      - QUARTERLY
-      - MONTHLY
-      - DAILY
+      - "ANNUALLY"
+      - "QUARTERLY"
+      - "MONTHLY"
+      - "DAILY"
+    Default: "MONTHLY"
     Description: Enter the length of time until a budget resets the actual and forecasted spend.
   BudgetsSubscriptionEmail:
     Type: String
-    Description: Enter the email to subscribe to budgets notification. By default, alerts are sent when 80% and 99% budget thresholds are reached.
+    Description: Enter the email to subscribe to budgets notification.
+    Default: ''
   EnableAnalyzer: 
     AllowedValues: 
       - "true"
       - "false"
     Default: "true"
-    Description: "Enables IAM access analyzer."
+    Description: "Creates IAM access analyzer resource to identify unintended access to your resources and data."
+    Type: String
+  EnableBudgetAlerts: 
+    AllowedValues: 
+      - "true"
+      - "false"
+    Default: "true"
+    Description: "Creates budget alert email notifications. If set to true, budget subscription email and budget amount must also be defined for alert to be created."
     Type: String
   EnableGuardDuty: 
     AllowedValues: 
       - "true"
       - "false"
     Default: "true"
-    Description: "Enables GuardDuty regional service."
+    Description: "Creates GuardDuty detector resource to analyse AWS data sources to detect potential threats."
     Type: String
   EnableSecurityHub: 
     AllowedValues: 
       - "true"
       - "false"
     Default: "true"
-    Description: "Enables SecurityHub regional service."
+    Description: "Enables SecurityHub which checks the current security state against industry standards and best practices across AWS accounts."
     Type: String
   GuardDutyPublishingFrequency:
     AllowedValues: 
@@ -92,61 +150,8 @@ Parameters:
     Default: "FIFTEEN_MINUTES"
     Description: "Specifies how frequently updated findings are exported."
     Type: String
+
 Resources:
-    ## Enables GuardDuty
-    GuardDutyDetector:
-      Condition: GuardDutyEnabled
-      Type: AWS::GuardDuty::Detector
-      Properties: 
-        Enable: true
-        # An enum value that specifies how frequently updated findings are exported.
-        FindingPublishingFrequency: !Ref GuardDutyPublishingFrequency
-        Tags:
-          - Key: Name
-            Value: !Ref AWS::StackName
-    ## Setup billing alarms 
-    BudgetNotification:
-      Type: AWS::Budgets::Budget
-      Properties: 
-        Budget: 
-          # User input budget amount, currency unit and time unit 
-          BudgetLimit:
-            Amount: 
-              Ref: BudgetAmountLimit
-            Unit:
-              Ref: BudgetCurrencyUnit
-          TimeUnit:
-            Ref: BudgetTimeUnit 
-          BudgetType: COST
-        Tags:
-          - Key: Name
-            Value: !Ref AWS::StackName
-        # User input subscription email for alerts
-        NotificationsWithSubscribers: 
-          - Notification:
-              NotificationType: ACTUAL
-              ComparisonOperator: GREATER_THAN
-              Threshold: 99
-            Subscribers:
-              - SubscriptionType: EMAIL
-                Address:
-                  Ref: BudgetsSubscriptionEmail
-          - Notification:
-              NotificationType: ACTUAL
-              ComparisonOperator: GREATER_THAN
-              Threshold: 80
-            Subscribers:
-            - SubscriptionType: EMAIL
-              Address: 
-                Ref: BudgetsSubscriptionEmail
-    ## Implements Security Hub service, resource is created in region where CF stack is deployed
-    SecurityHub:
-      Condition: SecurityHubEnabled
-      Type: AWS::SecurityHub::Hub
-      Properties:
-        Tags:
-          - Key: Name
-            Value: !Ref AWS::StackName
     ## Access and role analysis with IAM access analyzer
     Analyzer:
       Condition: AnalyzerEnabled
@@ -157,8 +162,72 @@ Resources:
         Tags:
           - Key: Name
             Value: !Ref AWS::StackName
+    ## Setup billing alarms 
+    BudgetNotification:
+      Condition: CreateBudgetAlerts
+      Type: AWS::Budgets::Budget
+      Properties: 
+        Budget: 
+          BudgetName: !Ref BudgetName
+          # User input budget amount, currency unit and time unit 
+          BudgetLimit:
+            Amount: !Ref BudgetAmountLimit
+            Unit: !Ref BudgetCurrencyUnit
+          TimeUnit: !Ref BudgetTimeUnit 
+          BudgetType: COST
+        # User input subscription email for alerts
+        # "A budget can have up to five notifications. Each notification must have at least one subscriber.
+        # A notification can have one SNS subscriber and up to ten email subscribers, for a total of 11 subscribers."
+        NotificationsWithSubscribers: 
+          - Notification:
+              NotificationType: ACTUAL
+              ComparisonOperator: GREATER_THAN
+              Threshold: !Ref BudgetFirstThreshold
+              ThresholdType: PERCENTAGE
+            Subscribers:
+              - SubscriptionType: EMAIL
+                Address: !Ref BudgetsSubscriptionEmail
+          - Notification:
+              NotificationType: ACTUAL
+              ComparisonOperator: GREATER_THAN
+              Threshold: !Ref BudgetSecondThreshold
+              ThresholdType: PERCENTAGE
+            Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref BudgetsSubscriptionEmail
+          - Notification:
+              ComparisonOperator: GREATER_THAN
+              NotificationType: FORECASTED
+              Threshold: 100
+              ThresholdType: PERCENTAGE
+            Subscribers:
+              - SubscriptionType: EMAIL
+                Address: !Ref BudgetsSubscriptionEmail
+    ## Enables GuardDuty
+    GuardDutyDetector:
+      Condition: GuardDutyEnabled
+      Type: AWS::GuardDuty::Detector
+      Properties: 
+        Enable: true
+        # An enum value that specifies how frequently updated findings are exported.
+        FindingPublishingFrequency: !Ref GuardDutyPublishingFrequency
+    ## Implements Security Hub service, resource is created in region where CF stack is deployed
+    SecurityHub:
+      Condition: SecurityHubEnabled
+      Type: AWS::SecurityHub::Hub
+      Properties:
+        Tags:
+          Name: !Ref AWS::StackName
 
 Outputs:
+  AnalyzerARN:
+    Condition: AnalyzerEnabled
+    Description: "ARN of the analyzer created."
+    Value: !Ref Analyzer
+  BudgetName:
+    Condition: CreateBudgetAlerts
+    Description: "Name of the budget created for alert email notifications."
+    Value: !Ref BudgetNotification
   GuardDutyDetectorID: 
     Condition: GuardDutyEnabled
     Description: "The unique ID of the GuardDuty detector resource."
@@ -167,7 +236,3 @@ Outputs:
     Condition: SecurityHubEnabled
     Description: "HubARN of security hub resource created."
     Value: !Ref SecurityHub
-  AnalyzerARN:
-    Condition: AnalyzerEnabled
-    Description: "ARN of the analyzer created."
-    Value: !Ref Analyzer
