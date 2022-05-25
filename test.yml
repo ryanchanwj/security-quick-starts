@@ -5,51 +5,82 @@ Description: AWS Basis Security Quick Starts - Single Account Deployment. Users 
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
-      - Parameters:
-          - EnableAnalyzer
-          - AnalyzerName
-          - AnalyzerType
-          - EnableGuardDuty
-          - GuardDutyPublishingFrequency
-          - EnableBudgetAlerts
-          - BudgetsSubscriptionEmail
-          - BudgetName
-          - BudgetCurrencyUnit
-          - BudgetAmountLimit
-          - BudgetFirstThreshold
-          - BudgetSecondThreshold
-          - BudgetTimeUnit
-          - EnableSecurityHub
+    - Label:
+        default: Budget alerts configuration
+      Parameters:
+      - EnableBudgetAlerts
+      - BudgetsSubscriptionEmail
+      - BudgetName
+      - BudgetCurrencyUnit
+      - BudgetAmountLimit
+      - BudgetFirstThreshold
+      - BudgetSecondThreshold
+      - BudgetTimeUnit
+    - Label:
+        default: GuardDuty configuration
+      Parameters:
+      - EnableGuardDuty
+      - GuardDutyPublishingFrequency
+    - Label:
+        default: IAM Access Analyzer configuration
+      Parameters:
+      - EnableAnalyzer
+      - AnalyzerName
+      - AnalyzerType
+    - Label:
+        default: Security Hub configuration
+      Parameters:
+      - EnableSecurityHub
+    - Label:
+        default: WAF configuration
+      Parameters:
+      - CreateWAF
+      - WAFType
+      - WAFWebACLName
+      - WAFWebACLMetricName
 
 Conditions:
   AnalyzerEnabled:
     !Equals
     - !Ref EnableAnalyzer
     - 'true'
-  GuardDutyEnabled:
-    !Equals
-    - !Ref EnableGuardDuty
-    - 'true'
-  SecurityHubEnabled:
-    !Equals
-    - !Ref EnableSecurityHub
-    - 'true'
   BudgetAlertsEnabled:
     !Equals
     - !Ref EnableBudgetAlerts
     - 'true'
-  HasSubscriptionEmail: !Not 
-    - !Equals 
-      - !Ref BudgetsSubscriptionEmail
-      - ''
-  HasBudgetAmount: !Not 
-    - !Equals 
-      - !Ref BudgetAmountLimit
-      - 0
   CreateBudgetAlerts: !And 
     - !Condition BudgetAlertsEnabled
     - !Condition HasSubscriptionEmail
     - !Condition HasBudgetAmount
+  CreateWAFClassic: !And
+    - !Equals ["WAF_Classic", !Ref WAFType]
+    - !Condition WAFCreationEnabled
+  CreateWAFRegional: !And
+    - !Equals ["WAF_Regional", !Ref WAFType]
+    - !Condition WAFCreationEnabled
+  CreateWAFV2: !And
+    - !Equals ["WAF_V2", !Ref WAFType]
+    - !Condition WAFCreationEnabled
+  GuardDutyEnabled:
+    !Equals
+    - !Ref EnableGuardDuty
+    - 'true'
+  HasBudgetAmount: !Not 
+    - !Equals 
+      - !Ref BudgetAmountLimit
+      - 0
+  HasSubscriptionEmail: !Not 
+    - !Equals 
+      - !Ref BudgetsSubscriptionEmail
+      - ''
+  SecurityHubEnabled:
+    !Equals
+    - !Ref EnableSecurityHub
+    - 'true'
+  WAFCreationEnabled:
+    !Equals
+    - !Ref CreateWAF
+    - 'true'
 
 Parameters:
   AnalyzerName: 
@@ -114,6 +145,13 @@ Parameters:
     Type: String
     Description: Enter the email to subscribe to budgets notification.
     Default: ''
+  CreateWAF:
+    AllowedValues: 
+      - "true"
+      - "false"
+    Default: "true"
+    Description: "Create AWS Web Application Firewall to manage traffic rules."
+    Type: String
   EnableAnalyzer: 
     AllowedValues: 
       - "true"
@@ -150,7 +188,22 @@ Parameters:
     Default: "FIFTEEN_MINUTES"
     Description: "Specifies how frequently updated findings are exported."
     Type: String
-
+  WAFWebACLMetricName:
+    Default: "ExampleWebACLMetric"
+    Description: "The name of the metrics for this WebACL. The name can contain only the characters A-Z, a-z, 0-9, - (hyphen), and _ (underscore). The name can be from one to 128 characters long. It can't contain whitespace or metric names reserved for AWS WAF, for example 'All' and 'Default_Action'. You cannot change the name of a web ACL after you create it."
+    Type: String
+  WAFWebACLName:
+    Type: String
+    Description: The name of the web ACL. You cannot change the name of a web ACL after you create it.
+    Default: "QuickStartWebACL"
+  WAFType:
+    AllowedValues:
+      - "WAF_Classic"
+      - "WAF_Regional"
+      - "WAF_V2"
+    Default: "WAF_V2"
+    Description: "Specifies type of AWS WAF to deploy."
+    Type: String
 Resources:
     ## Access and role analysis with IAM access analyzer
     Analyzer:
@@ -218,6 +271,37 @@ Resources:
       Properties:
         Tags:
           Name: !Ref AWS::StackName
+    ## Creates WAF Classic WebACL
+    WAFClassicWebACL: 
+      Condition: CreateWAFClassic
+      Type: "AWS::WAF::WebACL"
+      Properties: 
+        Name: !Ref WAFWebACLName
+        DefaultAction: 
+          Type: "BLOCK"
+        MetricName: !Ref WAFWebACLMetricName
+    ## Creates WAF Regional WebACL
+    WAFRegionalWebACL: 
+      Condition: CreateWAFRegional
+      Type: "AWS::WAFRegional::WebACL"
+      Properties:
+        Name: !Ref WAFWebACLName
+        DefaultAction: 
+          Type: "BLOCK"
+        MetricName: !Ref WAFWebACLMetricName
+    ## Creates WAF V2 WebACL
+    WAFV2WebACL: 
+      Condition: CreateWAFV2
+      Type: "AWS::WAFv2::WebACL"
+      Properties:
+        Name: !Ref WAFWebACLName
+        Scope: REGIONAL
+        DefaultAction:
+          Block: {}
+        VisibilityConfig:
+          SampledRequestsEnabled: true
+          CloudWatchMetricsEnabled: true
+          MetricName: !Ref WAFWebACLMetricName
 
 Outputs:
   AnalyzerARN:
@@ -236,3 +320,15 @@ Outputs:
     Condition: SecurityHubEnabled
     Description: "HubARN of security hub resource created."
     Value: !Ref SecurityHub
+  WAFClassicWebACLID:
+    Condition: CreateWAFClassic
+    Description: "The logical ID of the WAF Classic Web ACL resource."
+    Value: !Ref WAFClassicWebACL
+  WAFRegionalWebACLID:
+    Condition: CreateWAFRegional
+    Description: "The logical ID of the WAF Regional Web ACL resource."
+    Value: !Ref WAFRegionalWebACL
+  WAFV2WebACLDetails:
+    Condition: CreateWAFV2
+    Description: "The resource name, physical ID, and scope of the WAF Regional Web ACL resource."
+    Value: !Ref WAFV2WebACL
